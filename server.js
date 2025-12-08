@@ -8,7 +8,12 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 // --- Middleware ---
-app.use(cors()); // allow all origins; you can restrict later
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
 app.use(express.json());
 
 // --- Simple health check ---
@@ -17,22 +22,29 @@ app.get('/health', (req, res) => {
 });
 
 /**
- * GET /api/news?symbol=AAPL
- * Fetches Yahoo Finance news for a given symbol using yahoo-finance2
+ * GET /api/news?category=all&limit=10&offset=0
+ * GET /api/news?symbol=AAPL&limit=10&offset=0
+ * Fetches Yahoo Finance news for a given symbol or category
  */
 app.get('/api/news', async (req, res) => {
-  const symbol = (req.query.symbol || 'AAPL').toString().toUpperCase();
+  const category = req.query.category || '';
+  const symbol = req.query.symbol || (category === 'all' ? '^GSPC' : 'AAPL');
+  const limit = parseInt(req.query.limit) || 20;
+  const offset = parseInt(req.query.offset) || 0;
 
   try {
     // yahoo-finance2 search can return news along with other data
-    const result = await yahooFinance.search(symbol, {
-      newsCount: 20, // number of news items
+    const result = await yahooFinance.search(symbol.toString().toUpperCase(), {
+      newsCount: limit + offset, // fetch more to handle offset
     });
 
     const news = result.news || [];
 
+    // Apply offset and limit
+    const slicedNews = news.slice(offset, offset + limit);
+
     // You can also map it to a simpler shape if you want:
-    const simplified = news.map((item) => ({
+    const simplified = slicedNews.map((item) => ({
       id: item.uuid,
       title: item.title,
       publisher: item.publisher,
@@ -49,7 +61,9 @@ app.get('/api/news', async (req, res) => {
 
     res.json({
       symbol,
+      category,
       count: simplified.length,
+      total: news.length,
       items: simplified,
     });
   } catch (error) {
